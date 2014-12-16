@@ -17,20 +17,14 @@
 
 package org.apache.spark.mllib.feature
 
-import org.apache.spark.mllib.linalg.Vector
-import org.apache.spark.mllib.linalg.Vectors
-import org.apache.spark.util.Utils
-import org.apache.spark.util.random.XORShiftRandom
-
-import scala.collection.mutable
+import breeze.linalg.DenseVector
 import scala.collection.mutable.ListBuffer
-import java.lang.{Iterable => JavaIterable}
-
-import breeze.linalg.{Vector => BVector, DenseVector}
-
 import com.github.fommil.netlib.BLAS.{getInstance => blas}
 
+import org.apache.spark.mllib.linalg.Vector
+import org.apache.spark.mllib.linalg.Vectors
 import org.apache.spark.annotation.Experimental
+import org.apache.spark.util.random.XORShiftRandom
 
 
 /**
@@ -181,37 +175,23 @@ class Doc2VecModel(w2v: Word2VecModel) extends Serializable {
             }
 
             d = 0
-            while (d < targetWord.codeLen) {
-              val inner = targetWord.point(d)
-              val l2 = inner * vectorSize
-              var f = blas.sdot(vectorSize, l1.toArray, 0, 1, w2v.syn1, l2, 1)
-              total += 1
-              if (f > -MAX_EXP && f < MAX_EXP) {
-                val ind = ((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2)).toInt
-                f = w2v.expTable(ind)
-                val g = ((1 - targetWord.code(d) - f) / meanDenom.toFloat) * alpha.toFloat
-                blas.saxpy(vectorSize, g, w2v.syn1, l2, 1, neu1e, 0, 1)
-              }
-              d += 1
-            }
-
             while (d < outLayerNegS.length) {
               var inner = 0
-              if (d == 0) inner = w2v.vocabHash(targetWord.word)
+              if (d == 0) inner = w2v.vocabHash.getOrElse(targetWord.word, -1)
               else inner = w2v.unigramTable(initRandom.nextInt(w2v.unigramTable.size))
-              val l2 = inner * vectorSize
-              // Propagate hidden -> output
-              var f = blas.sdot(vectorSize, l1.toArray, 0, 1, w2v.syn1, l2, 1)
-              if (f > -MAX_EXP && f < MAX_EXP) {
-                val ind = ((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2)).toInt
-                f = w2v.expTable(ind)
-                val g = (1 - outLayerNegS(d) - f) * alpha.toFloat
-                blas.saxpy(vectorSize, g, w2v.syn1Neg, l2, 1, neu1e, 0, 1)
+              if (inner > -1) {
+                val l2 = inner * vectorSize
+                // Propagate hidden -> output
+                var f = blas.sdot(vectorSize, l1.toArray, 0, 1, w2v.syn1, l2, 1)
+                if (f > -MAX_EXP && f < MAX_EXP) {
+                  val ind = ((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2)).toInt
+                  f = w2v.expTable(ind)
+                  val g = (1 - outLayerNegS(d) - f) * alpha.toFloat
+                  blas.saxpy(vectorSize, g, w2v.syn1Neg, l2, 1, neu1e, 0, 1)
+                }
+                d += 1
               }
-              d += 1
             }
-
-
           }
         }
         // Concatenation
